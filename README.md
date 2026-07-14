@@ -24,7 +24,8 @@ ykding has zero dependencies. It only uses tools that ship with macOS
 ## What you get
 
 - **Glass** ding + banner for FIDO2 touches (`sk-ssh-*` keys, git commit
-  signing, SSH auth).
+  signing, SSH auth). Any FIDO2 security key triggers this, not just
+  YubiKeys.
 - **Ping** ding + banner for OpenPGP touches (gpg on the YubiKey).
 - When git signing triggered the touch, the banner shows the repo and
   the commit subject:
@@ -49,7 +50,8 @@ ykding` to pause it, `brew upgrade ykding` to update. Logs go to
 
 While a YubiKey waits for a touch, macOS logs telltale messages: the kernel
 for FIDO2, `usbsmartcardreaderd` for OpenPGP. `ykding` tails `log stream`
-for those.
+for those. The messages are a heuristic, not an API; tested on macOS 26
+(Intel). Open an issue if your macOS logs differently.
 
 For commit context, it inspects the `ssh-keygen -Y sign` process git
 spawned: its working directory gives the repo, and the message being signed
