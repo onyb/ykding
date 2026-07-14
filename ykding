@@ -1,0 +1,149 @@
+#!/bin/zsh
+# ykding — play a sound + notification whenever your YubiKey is waiting
+# for a touch (FIDO2 / OpenPGP) on macOS. One ding = one touch owed.
+#
+# https://github.com/onyb/ykding
+#
+# Install (or update):
+#   curl -fsSL https://raw.githubusercontent.com/onyb/ykding/master/ykding | zsh -s install
+#
+# Usage:
+#   ykding install     install as a LaunchAgent (starts now + at login)
+#   ykding uninstall   stop and remove it
+#   ykding test        play both alerts once (checks sound + notifications)
+#   ykding run         run in the foreground (what the LaunchAgent runs)
+
+set -u
+zmodload zsh/datetime
+
+URL=https://raw.githubusercontent.com/onyb/ykding/master/ykding
+LABEL=com.ykding
+BIN=$HOME/.local/bin/ykding
+PLIST=$HOME/Library/LaunchAgents/$LABEL.plist
+LOGFILE=$HOME/Library/Logs/ykding.log
+SELF=${0:A}
+typeset -A SOUND=(FIDO2 /System/Library/Sounds/Glass.aiff OpenPGP /System/Library/Sounds/Ping.aiff)
+typeset -A DEBOUNCE=(FIDO2 1 OpenPGP 8)  # min seconds between alerts, per type
+
+PREDICATE='(processImagePath == "/kernel" AND senderImagePath ENDSWITH "IOHIDFamily") OR (subsystem CONTAINS "CryptoTokenKit")'
+
+context() {
+  # Best effort: while `ssh-keygen -Y sign` blocks on touch, its cwd is
+  # where git ran, and the message being signed is already on disk in the
+  # git dir (rebase, then merge/cherry-pick, then plain commit).
+  local pid dir info f msg=
+  pid=$(pgrep -f 'ssh-keygen.*-Y sign' | head -1) || return 0
+  dir=$(lsof -a -p $pid -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  [[ -n $dir ]] || return 0
+  info=("${(f)$(git -C $dir rev-parse --absolute-git-dir --show-toplevel 2>/dev/null)}")
+  (( $#info == 2 )) || return 0
+  for f in rebase-merge/message MERGE_MSG COMMIT_EDITMSG; do
+    [[ -s ${info[1]}/$f ]] || continue
+    IFS= read -r msg < ${info[1]}/$f 2>/dev/null
+    [[ -n $msg ]] && print -r -- "${info[2]:t}: $msg"
+    return 0
+  done
+}
+
+ding() {
+  local type=$1 ts detail body
+  afplay ${SOUND[$type]} &>/dev/null &  # sound first; context lookup takes ~0.2s
+  detail=$(context)
+  strftime -s ts '%F %T' $EPOCHSECONDS
+  print -r -- "$ts $type touch requested${detail:+ — $detail}"
+  body=${detail//\\/\\\\}
+  body=${body//\"/\\\"}
+  osascript -e "display notification \"$body\" with title \"Touch your YubiKey ($type)\"" &>/dev/null &
+}
+
+request() {
+  # Debounced ding; `last` is run()'s, visible here via dynamic scoping.
+  local type=$1
+  (( EPOCHSECONDS - ${last[$type]:-0} >= ${DEBOUNCE[$type]} )) || return 0
+  last[$type]=$EPOCHSECONDS
+  ding $type
+}
+
+run() {
+  # Detection ported from https://github.com/noperator/yknotify.
+  # When a FIDO2 client starts waiting for a touch, the kernel logs
+  # "AppleUserUSBHostHIDDevice:0x... open by IOHIDLibUserClient:0x..."
+  # followed by "IOHIDLibUserClient:0x... startQueue". Tracking the client
+  # IDs from the open message avoids false positives from other HID
+  # devices (keyboards, trackpads). While an OpenPGP (gpg) operation waits
+  # for touch, usbsmartcardreaderd logs "Time extension received"
+  # repeatedly, so that one is debounced rather than counted.
+  typeset -A clients last
+  local esc='\/' line msg client
+  # Full path: zsh has a `log` builtin that would otherwise shadow this.
+  /usr/bin/log stream --level debug --style ndjson --predicate $PREDICATE |
+  while IFS= read -r line; do
+    [[ $line != *'"eventMessage":"'* ]] && continue
+    line=${line//${esc}/\/}
+    msg=${line#*'"eventMessage":"'}
+    msg=${msg%%\"*}
+    if [[ $line == *'"processImagePath":"/kernel"'* ]]; then
+      if [[ $msg == *'AppleUserUSBHostHIDDevice:'*' open by IOHIDLibUserClient:'* ]]; then
+        client=${msg#*open by }
+        clients[${client%% *}]=1
+      elif [[ $msg == *' startQueue' ]]; then
+        [[ -n ${clients[${msg%% *}]:-} ]] && request FIDO2
+      elif [[ $msg == *' stopQueue' ]]; then
+        unset "clients[${msg%% *}]"  # keep the map from growing forever
+      fi
+    elif [[ $line == *usbsmartcardreaderd* && $msg == 'Time extension received' ]]; then
+      request OpenPGP
+    fi
+  done
+}
+
+install() {
+  mkdir -p ${BIN:h} ${PLIST:h} ${LOGFILE:h}
+  if [[ -f $SELF && "$(sed -n 2p $SELF 2>/dev/null)" == '# ykding'* ]]; then
+    [[ $SELF != $BIN ]] && cp $SELF $BIN
+  else
+    # No script file on disk — running from a pipe (curl | zsh -s install).
+    curl -fsSL $URL -o $BIN || { print -u2 "ykding: download failed: $URL"; exit 1 }
+  fi
+  chmod +x $BIN
+  cat > $PLIST <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$BIN</string>
+    <string>run</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$LOGFILE</string>
+  <key>StandardErrorPath</key><string>$LOGFILE</string>
+</dict>
+</plist>
+EOF
+  launchctl bootout gui/$UID/$LABEL 2>/dev/null
+  launchctl bootstrap gui/$UID $PLIST
+  ding FIDO2
+  print "Installed. That ding is what a touch request sounds like."
+  print "If no banner appeared, allow notifications for Script Editor in"
+  print "System Settings > Notifications. Log: $LOGFILE"
+}
+
+uninstall() {
+  launchctl bootout gui/$UID/$LABEL 2>/dev/null
+  rm -f $PLIST $BIN
+  print "Uninstalled."
+}
+
+case ${1:-help} in
+  run) run ;;
+  install) install ;;
+  uninstall) uninstall ;;
+  test) ding FIDO2; wait; ding OpenPGP; wait ;;
+  # Piped invocations have no readable $SELF; point at the repo instead.
+  *) awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' $SELF 2>/dev/null ||
+       print "ykding — see https://github.com/onyb/ykding" ;;
+esac
