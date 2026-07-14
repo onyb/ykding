@@ -38,6 +38,7 @@ ykding has zero dependencies. It only uses tools that ship with macOS
 | Command          | What it does                                    |
 | ---------------- | ----------------------------------------------- |
 | `ykding test`    | Play both alerts once                           |
+| `ykding status`  | Show daemon state and recent touches            |
 | `ykding run`     | Run in the foreground (what brew services runs) |
 | `ykding version` | Print the version                               |
 

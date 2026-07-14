@@ -11,12 +11,13 @@
 # Usage:
 #   ykding run         run in the foreground (what brew services runs)
 #   ykding test        play both alerts once (checks sound + notifications)
+#   ykding status      show daemon state and recent touches
 #   ykding version     print the version
 
 set -u
 zmodload zsh/datetime
 
-VERSION=0.3.0
+VERSION=0.4.0
 REPO=https://github.com/onyb/ykding
 SELF=${0:A}
 typeset -A SOUND=(FIDO2 /System/Library/Sounds/Glass.aiff OpenPGP /System/Library/Sounds/Ping.aiff)
@@ -108,8 +109,28 @@ run() {
   done
 }
 
+status() {
+  local pid log
+  print "ykding $VERSION"
+  pid=$(pgrep -f 'ykding run' | head -1)
+  if [[ -n $pid ]]; then
+    print "daemon: running (pid $pid)"
+  else
+    print "daemon: NOT running — start with: brew services start ykding"
+  fi
+  log=${$(brew --prefix 2>/dev/null):-/opt/homebrew}/var/log/ykding.log
+  if [[ -s $log ]]; then
+    print "log: $log — recent touches:"
+    tail -3 $log
+  else
+    print "log: $log (no touches recorded yet)"
+  fi
+  [[ -n $pid ]]
+}
+
 case ${1:-help} in
   run) run ;;
+  status) status ;;
   test) ding FIDO2; wait; ding OpenPGP; wait ;;
   version) print -r -- $VERSION ;;
   *) awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' $SELF 2>/dev/null ||
