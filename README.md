@@ -10,19 +10,16 @@ done.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/onyb/ykding/master/ykding | zsh -s install
+brew install onyb/tap/ykding
+brew services start ykding
 ```
 
-This installs the latest release to `~/.local/bin/ykding` and starts a
-LaunchAgent (`com.ykding`) that runs at login, playing the alert once so
-you know the sound. Update later with `ykding update`; it never
-downgrades. Both commands take a `nightly` argument to get the tip of
-master instead. If no banner
+Then `ykding test` plays both alerts so you know the sounds. If no banner
 appears, allow notifications for **Script Editor** in System Settings →
 Notifications.
 
 ykding has zero dependencies. It only uses tools that ship with macOS
-(`log`, `afplay`, `osascript`, `launchctl`).
+(`log`, `afplay`, `osascript`).
 
 ## What you get
 
@@ -38,16 +35,15 @@ ykding has zero dependencies. It only uses tools that ship with macOS
 
 ## Commands
 
-| Command            | What it does                                     |
-| ------------------ | ------------------------------------------------ |
-| `ykding install`   | Install the latest release as a LaunchAgent      |
-| `ykding update`    | Update to the newest release                     |
-| `ykding uninstall` | Stop and remove it                               |
-| `ykding test`      | Play both alerts once                            |
-| `ykding run`       | Run in the foreground                            |
-| `ykding version`   | Print the version                                |
+| Command          | What it does                                    |
+| ---------------- | ----------------------------------------------- |
+| `ykding test`    | Play both alerts once                           |
+| `ykding run`     | Run in the foreground (what brew services runs) |
+| `ykding version` | Print the version                               |
 
-Logs go to `~/Library/Logs/ykding.log`, one line per touch request.
+The background service is managed by Homebrew: `brew services stop
+ykding` to pause it, `brew upgrade ykding` to update. Logs go to
+`$(brew --prefix)/var/log/ykding.log`, one line per touch request.
 
 ## How it works
 
