@@ -30,9 +30,8 @@ ykding has zero dependencies. It only uses tools that ship with macOS
 - When git signing triggered the touch, the banner shows the repo and
   the commit subject:
 
-  > **Touch your YubiKey (FIDO2)**
-  > onyb/ykding
-  > feat: alert with sound and banner when a YubiKey waits for touch
+  <img width="400" src="https://github.com/user-attachments/assets/512c5767-3f15-4a55-895f-e465c5697606" />
+
 
 ## Commands
 
