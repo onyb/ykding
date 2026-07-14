@@ -8,7 +8,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/onyb/ykding/master/ykding | zsh -s install
 #
 # Usage:
-#   ykding install     install as a LaunchAgent (starts now + at login)
+#   ykding install     install the latest release as a LaunchAgent
+#   ykding update      update to the newest release
+#                      (both take 'nightly' for the tip of master)
 #   ykding uninstall   stop and remove it
 #   ykding test        play both alerts once (checks sound + notifications)
 #   ykding run         run in the foreground (what the LaunchAgent runs)
@@ -17,8 +19,9 @@
 set -u
 zmodload zsh/datetime
 
-VERSION=0.1.0
-URL=https://raw.githubusercontent.com/onyb/ykding/master/ykding
+VERSION=0.2.0
+REPO=https://github.com/onyb/ykding
+RAW=https://raw.githubusercontent.com/onyb/ykding
 LABEL=com.ykding
 BIN=$HOME/.local/bin/ykding
 PLIST=$HOME/Library/LaunchAgents/$LABEL.plist
@@ -113,15 +116,30 @@ run() {
   done
 }
 
-install() {
-  mkdir -p ${BIN:h} ${PLIST:h} ${LOGFILE:h}
-  if [[ -f $SELF && "$(sed -n 2p $SELF 2>/dev/null)" == '# ykding'* ]]; then
-    [[ $SELF != $BIN ]] && cp $SELF $BIN
-  else
-    # No script file on disk — running from a pipe (curl | zsh -s install).
-    curl -fsSL $URL -o $BIN || { print -u2 "ykding: download failed: $URL"; exit 1 }
-  fi
+resolve() {
+  # Map the optional CLI word to a git ref: 'nightly' is the tip of
+  # master; default is the latest released tag, or master when none.
+  local tag
+  case ${1:-} in
+    nightly)
+      print master ;;
+    ?*)
+      print -u2 "ykding: unknown argument '$1' (only 'nightly' is supported)"
+      return 1 ;;
+    *)
+      tag=$(git ls-remote --refs --tags --sort=-v:refname $REPO 'v*' 2>/dev/null |
+              sed -n '1s|.*refs/tags/||p')
+      print ${tag:-master} ;;
+  esac
+}
+
+fetch() {
+  local url=$RAW/$1/ykding
+  curl -fsSL $url -o $BIN || { print -u2 "ykding: download failed: $url"; exit 1 }
   chmod +x $BIN
+}
+
+activate() {
   cat > $PLIST <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -142,10 +160,54 @@ install() {
 EOF
   launchctl bootout gui/$UID/$LABEL 2>/dev/null
   launchctl bootstrap gui/$UID $PLIST
+}
+
+install() {
+  # A checkout on disk installs itself (dev flow); piped, given an
+  # argument, or running the installed copy, it fetches a release.
+  local ref
+  mkdir -p ${BIN:h} ${PLIST:h} ${LOGFILE:h}
+  if [[ -z ${1:-} && -f $SELF && $SELF != $BIN && "$(sed -n 2p $SELF 2>/dev/null)" == '# ykding'* ]]; then
+    cp $SELF $BIN
+  else
+    ref=$(resolve ${1:-}) || exit 1
+    fetch $ref
+  fi
+  activate
   ding FIDO2
   print "Installed. That ding is what a touch request sounds like."
   print "If no banner appeared, allow notifications for Script Editor in"
   print "System Settings > Notifications. Log: $LOGFILE"
+}
+
+newer() {
+  # newer A B: true when dotted version A is newer than B.
+  local -a a=(${(s:.:)1}) b=(${(s:.:)2})
+  local i
+  for i in 1 2 3; do
+    (( ${a[$i]:-0} > ${b[$i]:-0} )) && return 0
+    (( ${a[$i]:-0} < ${b[$i]:-0} )) && return 1
+  done
+  return 1
+}
+
+update() {
+  [[ -f $BIN ]] || { print -u2 "ykding: not installed; run install first"; exit 1 }
+  local old=$($BIN version 2>/dev/null) ref new target
+  ref=$(resolve ${1:-}) || exit 1
+  # A release only replaces an older one; 'nightly' skips the check.
+  if [[ $ref == v* ]]; then
+    target=${ref#v}
+    if [[ $target == $old ]]; then
+      print "Already on $old."; return
+    elif ! newer $target $old; then
+      print "Not downgrading: installed $old, latest release is $target."; return
+    fi
+  fi
+  fetch $ref
+  activate
+  new=$($BIN version)
+  print "Updated ${old:-?} to $new."
 }
 
 uninstall() {
@@ -156,11 +218,12 @@ uninstall() {
 
 case ${1:-help} in
   run) run ;;
-  install) install ;;
+  install) install ${2:-} ;;
+  update) update ${2:-} ;;
   uninstall) uninstall ;;
   test) ding FIDO2; wait; ding OpenPGP; wait ;;
   version) print -r -- $VERSION ;;
   # Piped invocations have no readable $SELF; point at the repo instead.
   *) awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' $SELF 2>/dev/null ||
-       print "ykding — see https://github.com/onyb/ykding" ;;
+       print "ykding — see $REPO" ;;
 esac

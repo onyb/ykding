@@ -13,10 +13,13 @@ done.
 curl -fsSL https://raw.githubusercontent.com/onyb/ykding/master/ykding | zsh -s install
 ```
 
-This installs to `~/.local/bin/ykding` and starts a LaunchAgent
-(`com.ykding`) that runs at login. It plays the alert once so you know the
-sound. If no banner appears, allow notifications for **Script Editor** in
-System Settings → Notifications.
+This installs the latest release to `~/.local/bin/ykding` and starts a
+LaunchAgent (`com.ykding`) that runs at login, playing the alert once so
+you know the sound. Update later with `ykding update`; it never
+downgrades. Both commands take a `nightly` argument to get the tip of
+master instead. If no banner
+appears, allow notifications for **Script Editor** in System Settings →
+Notifications.
 
 ykding has zero dependencies. It only uses tools that ship with macOS
 (`log`, `afplay`, `osascript`, `launchctl`).
@@ -37,7 +40,8 @@ ykding has zero dependencies. It only uses tools that ship with macOS
 
 | Command            | What it does                                     |
 | ------------------ | ------------------------------------------------ |
-| `ykding install`   | Install as a LaunchAgent (starts now + at login) |
+| `ykding install`   | Install the latest release as a LaunchAgent      |
+| `ykding update`    | Update to the newest release                     |
 | `ykding uninstall` | Stop and remove it                               |
 | `ykding test`      | Play both alerts once                            |
 | `ykding run`       | Run in the foreground                            |
