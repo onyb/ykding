@@ -19,7 +19,7 @@
 set -u
 zmodload zsh/datetime
 
-VERSION=0.2.0
+VERSION=0.2.1
 REPO=https://github.com/onyb/ykding
 RAW=https://raw.githubusercontent.com/onyb/ykding
 LABEL=com.ykding
@@ -119,10 +119,13 @@ run() {
 resolve() {
   # Map the optional CLI word to a git ref: 'nightly' is the tip of
   # master; default is the latest released tag, or master when none.
-  local tag
+  local tag sha
   case ${1:-} in
     nightly)
-      print master ;;
+      # Pin to the commit sha: the raw URL for the mutable master ref is
+      # CDN-cached for minutes and can serve a stale (older!) script.
+      sha=$(git ls-remote $REPO refs/heads/master 2>/dev/null | cut -f1)
+      print ${sha:-master} ;;
     ?*)
       print -u2 "ykding: unknown argument '$1' (only 'nightly' is supported)"
       return 1 ;;
@@ -207,7 +210,11 @@ update() {
   fetch $ref
   activate
   new=$($BIN version)
-  print "Updated ${old:-?} to $new."
+  if [[ $old == $new ]]; then
+    print "Reinstalled $new."
+  else
+    print "Updated ${old:-?} to $new."
+  fi
 }
 
 uninstall() {
