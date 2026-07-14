@@ -27,10 +27,11 @@ ykding has zero dependencies. It only uses tools that ship with macOS
   signing, SSH auth).
 - **Ping** ding + banner for OpenPGP touches (gpg on the YubiKey).
 - When git signing triggered the touch, the banner shows the repo and
-  commit subject:
+  the commit subject:
 
   > **Touch your YubiKey (FIDO2)**
-  > ykding: feat: alert with sound and banner when a YubiKey waits for touch
+  > onyb/ykding
+  > feat: alert with sound and banner when a YubiKey waits for touch
 
 ## Commands
 

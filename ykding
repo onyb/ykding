@@ -31,29 +31,43 @@ context() {
   # Best effort: while `ssh-keygen -Y sign` blocks on touch, its cwd is
   # where git ran, and the message being signed is already on disk in the
   # git dir (rebase, then merge/cherry-pick, then plain commit).
-  local pid dir info f msg=
+  local pid dir info f repo msg=
   pid=$(pgrep -f 'ssh-keygen.*-Y sign' | head -1) || return 0
   dir=$(lsof -a -p $pid -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
   [[ -n $dir ]] || return 0
   info=("${(f)$(git -C $dir rev-parse --absolute-git-dir --show-toplevel 2>/dev/null)}")
   (( $#info == 2 )) || return 0
+  repo=$(git -C $dir remote get-url origin 2>/dev/null) || repo=${info[2]:t}
+  # Shorten the remote URL to org/repo; banners are ~40 chars wide.
+  local -a parts
+  parts=(${(s:/:)${${repo%.git}//:/\/}})
+  (( $#parts >= 2 )) && repo=${parts[-2]}/${parts[-1]}
   for f in rebase-merge/message MERGE_MSG COMMIT_EDITMSG; do
     [[ -s ${info[1]}/$f ]] || continue
     IFS= read -r msg < ${info[1]}/$f 2>/dev/null
-    [[ -n $msg ]] && print -r -- "${info[2]:t}: $msg"
+    [[ -n $msg ]] && { print -r -- $repo; print -r -- $msg }
     return 0
   done
 }
 
+esc() {  # escape for an AppleScript double-quoted string
+  local s=${1//\\/\\\\}
+  print -r -- ${s//\"/\\\"}
+}
+
 ding() {
-  local type=$1 ts detail body
+  local type=$1 ts repo= msg=
+  local -a ctx
   afplay ${SOUND[$type]} &>/dev/null &  # sound first; context lookup takes ~0.2s
-  detail=$(context)
+  ctx=("${(f)$(context)}")
+  (( $#ctx == 2 )) && { repo=$ctx[1]; msg=$ctx[2] }
   strftime -s ts '%F %T' $EPOCHSECONDS
-  print -r -- "$ts $type touch requested${detail:+ — $detail}"
-  body=${detail//\\/\\\\}
-  body=${body//\"/\\\"}
-  osascript -e "display notification \"$body\" with title \"Touch your YubiKey ($type)\"" &>/dev/null &
+  print -r -- "$ts $type touch requested${msg:+ — $repo: $msg}"
+  if [[ -n $msg ]]; then
+    osascript -e "display notification \"$(esc $msg)\" with title \"Touch your YubiKey ($type)\" subtitle \"$(esc $repo)\"" &>/dev/null &
+  else
+    osascript -e "display notification \"\" with title \"Touch your YubiKey ($type)\"" &>/dev/null &
+  fi
 }
 
 request() {
