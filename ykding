@@ -12,10 +12,12 @@
 #   ykding uninstall   stop and remove it
 #   ykding test        play both alerts once (checks sound + notifications)
 #   ykding run         run in the foreground (what the LaunchAgent runs)
+#   ykding version     print the version
 
 set -u
 zmodload zsh/datetime
 
+VERSION=0.1.0
 URL=https://raw.githubusercontent.com/onyb/ykding/master/ykding
 LABEL=com.ykding
 BIN=$HOME/.local/bin/ykding
@@ -157,6 +159,7 @@ case ${1:-help} in
   install) install ;;
   uninstall) uninstall ;;
   test) ding FIDO2; wait; ding OpenPGP; wait ;;
+  version) print -r -- $VERSION ;;
   # Piped invocations have no readable $SELF; point at the repo instead.
   *) awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' $SELF 2>/dev/null ||
        print "ykding — see https://github.com/onyb/ykding" ;;

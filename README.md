@@ -41,6 +41,7 @@ ykding has zero dependencies. It only uses tools that ship with macOS
 | `ykding uninstall` | Stop and remove it                               |
 | `ykding test`      | Play both alerts once                            |
 | `ykding run`       | Run in the foreground                            |
+| `ykding version`   | Print the version                                |
 
 Logs go to `~/Library/Logs/ykding.log`, one line per touch request.
 
