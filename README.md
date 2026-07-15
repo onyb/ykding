@@ -32,6 +32,14 @@ ykding has zero dependencies. It only uses tools that ship with macOS
 
   <img width="400" src="https://github.com/user-attachments/assets/512c5767-3f15-4a55-895f-e465c5697606" />
 
+- When an SSH connection triggered the touch, the banner shows the
+  destination and the remote command, e.g. `git@github.com:
+  git-upload-pack onyb/ykding.git`. Cloning a repo with five private
+  submodules, each ding tells you which fetch wants the touch.
+
+Naming who is asking makes every tap an informed one: a touch request
+you did not initiate shows up as a banner for something you do not
+recognize, instead of training you to tap whenever the key blinks.
 
 ## Commands
 
@@ -56,8 +64,12 @@ for those. The messages are a heuristic, not an API; tested on macOS 26
 For commit context, it inspects the `ssh-keygen -Y sign` process git
 spawned: its working directory gives the repo, and the message being signed
 is read from the git dir (`rebase-merge/message`, `MERGE_MSG`, or
-`COMMIT_EDITMSG`). All best-effort; if anything fails you get a plain
-"Touch your YubiKey" banner.
+`COMMIT_EDITMSG`). For SSH context, the `ssh-sk-helper` process is alive
+exactly while the key waits for a touch; its parent is the ssh client, and
+the destination plus any remote command are read off its command line.
+All best-effort; if anything fails (or the key lives in ssh-agent, whose
+requests carry no destination) you get a plain "Touch your YubiKey"
+banner.
 
 ## References
 

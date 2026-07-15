@@ -17,7 +17,7 @@
 set -u
 zmodload zsh/datetime
 
-VERSION=0.4.0
+VERSION=0.5.0
 REPO=https://github.com/onyb/ykding
 SELF=${0:A}
 typeset -A SOUND=(FIDO2 /System/Library/Sounds/Glass.aiff OpenPGP /System/Library/Sounds/Ping.aiff)
@@ -26,11 +26,27 @@ typeset -A DEBOUNCE=(FIDO2 1 OpenPGP 8)  # min seconds between alerts, per type
 PREDICATE='(processImagePath == "/kernel" AND senderImagePath ENDSWITH "IOHIDFamily") OR (subsystem CONTAINS "CryptoTokenKit")'
 
 context() {
-  # Best effort: while `ssh-keygen -Y sign` blocks on touch, its cwd is
+  # Best effort: name who is asking for the touch, so every tap is an
+  # informed one. Fills `reply` (the caller's, via dynamic scoping) with
+  # banner subtitle and optional banner body. Each probe returns 0 iff
+  # it claims the touch, even when it can't fill in the details.
+  # Probes must pgrep by executable name (-x), never by argv pattern
+  # (-f): another ykding instance reacting to the same log event runs
+  # its own pgrep, whose argv would contain the pattern — and the match
+  # would be a corpse by the time we inspect it.
+  reply=()
+  sign_context || ssh_context
+}
+
+sign_context() {
+  # Git signing: while `ssh-keygen -Y sign` blocks on touch, its cwd is
   # where git ran, and the message being signed is already on disk in the
   # git dir (rebase, then merge/cherry-pick, then plain commit).
-  local pid dir info f repo msg=
-  pid=$(pgrep -f 'ssh-keygen.*-Y sign' | head -1) || return 0
+  local p pid= dir info f repo msg=
+  for p in $(pgrep -x ssh-keygen); do
+    [[ $(ps -o command= -p $p 2>/dev/null) == *' -Y sign'* ]] && { pid=$p; break }
+  done
+  [[ -n $pid ]] || return 1
   dir=$(lsof -a -p $pid -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
   [[ -n $dir ]] || return 0
   info=("${(f)$(git -C $dir rev-parse --absolute-git-dir --show-toplevel 2>/dev/null)}")
@@ -43,9 +59,38 @@ context() {
   for f in rebase-merge/message MERGE_MSG COMMIT_EDITMSG; do
     [[ -s ${info[1]}/$f ]] || continue
     IFS= read -r msg < ${info[1]}/$f 2>/dev/null
-    [[ -n $msg ]] && { print -r -- $repo; print -r -- $msg }
-    return 0
+    break
   done
+  reply=($repo $msg)  # zsh drops the second element when $msg is empty
+}
+
+ssh_context() {
+  # SSH auth: while an sk key waits for touch, ssh's sk helper process is
+  # alive and its parent is the ssh client, whose command line carries the
+  # destination and any remote command (e.g. git-upload-pack 'org/repo').
+  local pid ppid
+  pid=$(pgrep -nx ssh-sk-helper) || return 1
+  ppid=${$(ps -o ppid= -p $pid 2>/dev/null)// /}
+  [[ -n $ppid ]] || return 0
+  local -a argv
+  argv=(${(z)$(ps -o command= -p $ppid 2>/dev/null)})
+  [[ ${argv[1]:t} == ssh ]] || return 0
+  # Walk ssh's argv: skip flags, and the values of flags that take one
+  # (ssh.c's getopt string); the first bare word is the destination,
+  # anything after it the remote command. ps shows args unquoted, so a
+  # flag value containing spaces would mis-parse — acceptable for a
+  # best-effort banner.
+  local i=2
+  while (( i <= $#argv )); do
+    case $argv[i] in
+      --) (( i++ )); break ;;
+      -[BbcDEeFIiJLlmOoPpRSWw]) (( i += 2 )) ;;
+      -*) (( i++ )) ;;
+      *) break ;;
+    esac
+  done
+  (( i <= $#argv )) || return 0
+  reply=(${argv[i]#ssh://} ${(j: :)${(Q)argv[i+1,-1]}})
 }
 
 esc() {  # escape for an AppleScript double-quoted string
@@ -54,18 +99,14 @@ esc() {  # escape for an AppleScript double-quoted string
 }
 
 ding() {
-  local type=$1 ts repo= msg=
-  local -a ctx
+  local type=$1 ts sub msg
+  local -a reply
   afplay ${SOUND[$type]} &>/dev/null &  # sound first; context lookup takes ~0.2s
-  ctx=("${(f)$(context)}")
-  (( $#ctx == 2 )) && { repo=$ctx[1]; msg=$ctx[2] }
+  [[ $type == FIDO2 ]] && context  # both probes are FIDO2-shaped; gpg has no context
+  sub=${reply[1]:-} msg=${reply[2]:-}
   strftime -s ts '%F %T' $EPOCHSECONDS
-  print -r -- "$ts $type touch requested${msg:+ — $repo: $msg}"
-  if [[ -n $msg ]]; then
-    osascript -e "display notification \"$(esc $msg)\" with title \"Touch your YubiKey ($type)\" subtitle \"$(esc $repo)\"" &>/dev/null &
-  else
-    osascript -e "display notification \"\" with title \"Touch your YubiKey ($type)\"" &>/dev/null &
-  fi
+  print -r -- "$ts $type touch requested${sub:+ — $sub}${msg:+: $msg}"
+  osascript -e "display notification \"${msg:+$(esc "$msg")}\" with title \"Touch your YubiKey ($type)\"${sub:+ subtitle \"$(esc "$sub")\"}" &>/dev/null &
 }
 
 request() {
